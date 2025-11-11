@@ -3,7 +3,6 @@ import {
     ChildProcess,
     ChildProcessWithoutNullStreams,
     execFile,
-    exec,
     execSync,
     ExecFileException,
     spawn,
@@ -18,7 +17,7 @@ import { stdout } from 'process';
 
 const executableName = 'yt-dlp';
 const progressRegex =
-    /\[download\] *(.*) of ([^ ]*)(:? *at *([^ ]*))?(:? *ETA *([^ ]*))?/;
+    /\[download\][ ]+ *(.*)[ ]+of[~ ]+([^ ]*)(:? *at *([^ ]*))?(:? *ETA *([^ ]*))?/;
 
 //#region YTDlpEventEmitter
 
@@ -173,11 +172,10 @@ export default class YTDlpWrap {
         message: IncomingMessage,
         filePath: string
     ): Promise<IncomingMessage> {
-        const file = fs.createWriteStream(filePath);
         return new Promise<IncomingMessage>((resolve, reject) => {
-            message.pipe(file);
+            message.pipe(fs.createWriteStream(filePath));
             message.on('error', (e) => reject(e));
-            file.on('finish', () =>
+            message.on('end', () =>
                 message.statusCode == 200 ? resolve(message) : reject(message)
             );
         });
@@ -231,8 +229,33 @@ export default class YTDlpWrap {
         version?: string,
         platform = os.platform()
     ): Promise<void> {
-        const isWin32 = platform == 'win32';
-        const fileName = `${executableName}${isWin32 ? '.exe' : ''}`;
+        const isWin32 = platform === 'win32';
+        const isMac = platform === 'darwin';
+        const isLinux = platform === 'linux';
+
+        let fileName = executableName;
+
+        if (isWin32) {
+            if (os.arch() === 'ia32') {
+                fileName += '_x86.exe';
+            } else if (os.arch() === "arm64") {
+                fileName += "_arm64.exe"
+            }
+             else {
+                fileName += '.exe';
+            }
+        } else if (isLinux) {
+            if (os.arch() === 'arm64') {
+                fileName += '_linux_aarch64';
+            } else if (os.arch() === 'arm') {
+                fileName += '_linux_armv7l';
+            } else {
+                fileName += '_linux';
+            }
+        } else if (isMac) {
+            fileName += "_macos"
+        }
+
         if (!version)
             version = (await YTDlpWrap.getGithubReleases(1, 1))[0].tag_name;
         if (!filePath) filePath = './' + fileName;
@@ -359,11 +382,6 @@ export default class YTDlpWrap {
 
     async getHelp(): Promise<string> {
         let ytDlpStdout = await this.execPromise(['--help']);
-        return ytDlpStdout;
-    }
-
-    async getUserAgent(): Promise<string> {
-        let ytDlpStdout = await this.execPromise(['--dump-user-agent']);
         return ytDlpStdout;
     }
 

@@ -1,9 +1,9 @@
-# yt-dlp-wrap
+# yt-dlp-wrap-plus
 
-This is a fork of the great lib [youtube-dl-wrap](https://github.com/ghjbnm/youtube-dl-wrap) (written by [ghjbnm](https://github.com/ghjbnm)) rewritten in TypeScript.
+This is a fork of yt-dlp-wrap with some modifications (Downloads full executable for linux, macos and fixed problems with progress).
 
-![](https://github.com/foxesdocode/yt-dlp-wrap/workflows/CI%20tests/badge.svg)
-<a href="https://npmjs.org/package/yt-dlp-wrap" title="View this project on NPM"><img src="https://img.shields.io/npm/v/yt-dlp-wrap.svg" alt="NPM version" /></a>
+![](https://github.com/aandrew-me/yt-dlp-wrap-plus-plus/workflows/CI%20tests/badge.svg)
+<a href="https://npmjs.org/package/yt-dlp-wrap-plus" title="View this project on NPM"><img src="https://img.shields.io/npm/v/yt-dlp-wrap-plus.svg" alt="NPM version" /></a>
 
 A simple node.js wrapper for [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 
@@ -15,20 +15,20 @@ A simple node.js wrapper for [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 
 ## Installation
 
-You can install yt-dlp-wrap via npm (`npm i yt-dlp-wrap`).  
+You can install yt-dlp-wrap-plus via npm (`npm i yt-dlp-wrap-plus`).  
 YT-dlp itself will not be automatically downloaded.  
 Provide it yourself or use some of the following functions to download the binary.
 
 Typescript (only import differs)
 
 ```typescript
-import YTDlpWrap from 'yt-dlp-wrap';
+import YTDlpWrap from 'yt-dlp-wrap-plus';
 ```
 
 Javascript
 
 ```javascript
-const YTDlpWrap = require('yt-dlp-wrap').default;
+const YTDlpWrap = require('yt-dlp-wrap-plus').default;
 
 //Get the data from the github releases API. In this case get page 1 with a maximum of 5 items.
 let githubReleasesData = await YTDlpWrap.getGithubReleases(1, 5);
@@ -58,7 +58,7 @@ The log message `[download] Destination: output.mp4` will emit the event type `d
 `ytDlpEmitter.ytDlpProcess` exposes the spawned yt-dlp process.
 
 ```javascript
-const YTDlpWrap = require('yt-dlp-wrap').default;
+const YTDlpWrap = require('yt-dlp-wrap-plus').default;
 const ytDlpWrap = new YTDlpWrap('path/to/yt-dlp/binary');
 
 let ytDlpEventEmitter = ytDlpWrap
@@ -157,7 +157,6 @@ Just a few utility functions to get informations.
 
 ```javascript
 let version = await ytDlpWrap.getVersion();
-let userAgent = await ytDlpWrap.getUserAgent();
 let help = await ytDlpWrap.getHelp();
 let extractors = await ytDlpWrap.getExtractors();
 let extractorDescriptions = await ytDlpWrap.getExtractorDescriptions();

@@ -169,11 +169,6 @@ describe('utility functions', function () {
         assert(isValidVersion(versionString));
     });
 
-    it('user agent should be a string with at least 10 characters', async function () {
-        let userAgentString = await ytDlpWrap.getUserAgent();
-        assert.strictEqual(typeof userAgentString, 'string');
-        assert(userAgentString.length >= 10);
-    });
 
     it('help should include explanation for version setting', async function () {
         let helpString = await ytDlpWrap.getHelp();
