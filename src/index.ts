@@ -174,27 +174,58 @@ export default class YTDlpWrap {
             progress: number,
             downloaded: number,
             total: number
-        ) => void
+        ) => void,
+        timeoutMs: number = 15000 // 15 seconds without data = fail
     ): Promise<IncomingMessage> {
         return new Promise<IncomingMessage>((resolve, reject) => {
             const total = Number(message.headers['content-length'] ?? 0);
             let downloaded = 0;
 
+            // Create write stream
             const fileStream = fs.createWriteStream(filePath);
 
+            // Timeout handling
+            let lastDataTime = Date.now();
+            const timeout = setInterval(() => {
+                if (Date.now() - lastDataTime > timeoutMs) {
+                    clearInterval(timeout);
+                    message.destroy(new Error('Download timed out'));
+                }
+            }, 1000);
+
+            // Progress
             message.on('data', (chunk) => {
                 downloaded += chunk.length;
+                lastDataTime = Date.now(); // reset timeout
+
                 if (total > 0 && onProgress) {
-                    const progress = downloaded / total;
-                    onProgress(progress, downloaded, total);
+                    onProgress(downloaded / total, downloaded, total);
                 }
             });
 
-            message.on('error', reject);
+            // Error handling
+            const fail = (err: any) => {
+                clearInterval(timeout);
+
+                fileStream.close(() => {
+                    // remove partial file
+                    fs.unlink(filePath, () => {
+                        reject(err);
+                    });
+                });
+            };
+
+            message.on('error', fail);
+            fileStream.on('error', fail);
 
             fileStream.on('finish', () => {
-                if (message.statusCode === 200) resolve(message);
-                else reject(message);
+                clearInterval(timeout);
+
+                if (message.statusCode === 200) {
+                    resolve(message);
+                } else {
+                    fail(new Error(`HTTP Status ${message.statusCode}`));
+                }
             });
 
             message.pipe(fileStream);
