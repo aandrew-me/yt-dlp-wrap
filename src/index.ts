@@ -175,40 +175,43 @@ export default class YTDlpWrap {
             downloaded: number,
             total: number
         ) => void,
-        timeoutMs: number = 15000 // 15 seconds without data = fail
+        timeoutMs: number = 15000
     ): Promise<IncomingMessage> {
         return new Promise<IncomingMessage>((resolve, reject) => {
             const total = Number(message.headers['content-length'] ?? 0);
             let downloaded = 0;
 
-            // Create write stream
             const fileStream = fs.createWriteStream(filePath);
 
-            // Timeout handling
+            // Socket timeout
+            if (message.socket) {
+                message.socket.setTimeout(timeoutMs);
+                message.socket.on('timeout', () => {
+                    message.destroy(new Error('Network timeout'));
+                });
+            }
+
             let lastDataTime = Date.now();
-            const timeout = setInterval(() => {
+            const watchdog = setInterval(() => {
                 if (Date.now() - lastDataTime > timeoutMs) {
-                    clearInterval(timeout);
-                    message.destroy(new Error('Download timed out'));
+                    message.destroy(new Error('Download stalled'));
                 }
             }, 1000);
 
             // Progress
             message.on('data', (chunk) => {
                 downloaded += chunk.length;
-                lastDataTime = Date.now(); // reset timeout
+                lastDataTime = Date.now();
 
                 if (total > 0 && onProgress) {
                     onProgress(downloaded / total, downloaded, total);
                 }
             });
 
-            // Error handling
+            // Fail handler
             const fail = (err: any) => {
-                clearInterval(timeout);
-
+                clearInterval(watchdog);
                 fileStream.close(() => {
-                    // remove partial file
                     fs.unlink(filePath, () => {
                         reject(err);
                     });
@@ -219,8 +222,7 @@ export default class YTDlpWrap {
             fileStream.on('error', fail);
 
             fileStream.on('finish', () => {
-                clearInterval(timeout);
-
+                clearInterval(watchdog);
                 if (message.statusCode === 200) {
                     resolve(message);
                 } else {
