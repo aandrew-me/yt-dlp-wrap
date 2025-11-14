@@ -178,56 +178,75 @@ export default class YTDlpWrap {
         timeoutMs: number = 15000
     ): Promise<IncomingMessage> {
         return new Promise<IncomingMessage>((resolve, reject) => {
+            let cleanedUp = false;
+
             const total = Number(message.headers['content-length'] ?? 0);
             let downloaded = 0;
 
             const fileStream = fs.createWriteStream(filePath);
+            let timeoutId: NodeJS.Timeout | null = null;
 
-            // Socket timeout
-            if (message.socket) {
-                message.socket.setTimeout(timeoutMs);
-                message.socket.on('timeout', () => {
-                    message.destroy(new Error('Network timeout'));
-                });
-            }
-
-            let lastDataTime = Date.now();
-            const watchdog = setInterval(() => {
-                if (Date.now() - lastDataTime > timeoutMs) {
-                    message.destroy(new Error('Download stalled'));
+            const cleanup = (error?: Error) => {
+                if (cleanedUp) {
+                    return;
                 }
-            }, 1000);
+                cleanedUp = true;
 
-            // Progress
+                if (timeoutId) {
+                    clearTimeout(timeoutId);
+                }
+
+                message.removeAllListeners('data');
+                message.removeAllListeners('end');
+                message.removeAllListeners('error');
+                message.socket?.removeAllListeners('timeout');
+                fileStream.removeAllListeners('error');
+                fileStream.removeAllListeners('finish');
+
+                message.destroy();
+                fileStream.close();
+
+                if (error) {
+                    // If an error occurred, attempt to delete the partial file.
+                    fs.unlink(filePath, (unlinkErr) => {
+                        reject(error);
+                    });
+                } else if (message.statusCode !== 200) {
+                    fs.unlink(filePath, (unlinkErr) => {
+                        reject(new Error(`HTTP Status ${message.statusCode}`));
+                    });
+                } else {
+                    resolve(message);
+                }
+            };
+
+            timeoutId = setTimeout(() => {
+                cleanup(new Error(`Download timed out after ${timeoutMs}ms`));
+            }, timeoutMs);
+
             message.on('data', (chunk) => {
-                downloaded += chunk.length;
-                lastDataTime = Date.now();
+                if (timeoutId) {
+                    clearTimeout(timeoutId);
+                    timeoutId = setTimeout(() => {
+                        cleanup(
+                            new Error(
+                                `Download timed out after ${timeoutMs}ms of inactivity`
+                            )
+                        );
+                    }, timeoutMs);
+                }
 
+                downloaded += chunk.length;
                 if (total > 0 && onProgress) {
                     onProgress(downloaded / total, downloaded, total);
                 }
             });
 
-            // Fail handler
-            const fail = (err: any) => {
-                clearInterval(watchdog);
-                fileStream.close(() => {
-                    fs.unlink(filePath, () => {
-                        reject(err);
-                    });
-                });
-            };
-
-            message.on('error', fail);
-            fileStream.on('error', fail);
+            message.on('error', (err) => cleanup(err));
+            fileStream.on('error', (err) => cleanup(err));
 
             fileStream.on('finish', () => {
-                clearInterval(watchdog);
-                if (message.statusCode === 200) {
-                    resolve(message);
-                } else {
-                    fail(new Error(`HTTP Status ${message.statusCode}`));
-                }
+                cleanup();
             });
 
             message.pipe(fileStream);
