@@ -13,7 +13,6 @@ import https from 'https';
 import os from 'os';
 import { Readable } from 'stream';
 import { IncomingMessage } from 'http';
-import { stdout } from 'process';
 
 const executableName = 'yt-dlp';
 const progressRegex =
@@ -170,22 +169,49 @@ export default class YTDlpWrap {
 
     private static processMessageToFile(
         message: IncomingMessage,
-        filePath: string
+        filePath: string,
+        onProgress?: (
+            progress: number,
+            downloaded: number,
+            total: number
+        ) => void
     ): Promise<IncomingMessage> {
         return new Promise<IncomingMessage>((resolve, reject) => {
-            message.pipe(fs.createWriteStream(filePath));
-            message.on('error', (e) => reject(e));
-            message.on('end', () =>
-                message.statusCode == 200 ? resolve(message) : reject(message)
-            );
+            const total = Number(message.headers['content-length'] ?? 0);
+            let downloaded = 0;
+
+            const fileStream = fs.createWriteStream(filePath);
+
+            message.on('data', (chunk) => {
+                downloaded += chunk.length;
+                if (total > 0 && onProgress) {
+                    const progress = downloaded / total;
+                    onProgress(progress, downloaded, total);
+                }
+            });
+
+            message.on('error', reject);
+
+            fileStream.on('finish', () => {
+                if (message.statusCode === 200) resolve(message);
+                else reject(message);
+            });
+
+            message.pipe(fileStream);
         });
     }
 
     static async downloadFile(
         fileURL: string,
-        filePath: string
+        filePath: string,
+        onProgress?: (
+            progress: number,
+            downloaded: number,
+            total: number
+        ) => void
     ): Promise<IncomingMessage | undefined> {
         let currentUrl: string | null = fileURL;
+
         while (currentUrl) {
             const message: IncomingMessage = await YTDlpWrap.createGetMessage(
                 currentUrl
@@ -194,7 +220,11 @@ export default class YTDlpWrap {
             if (message.headers.location) {
                 currentUrl = message.headers.location;
             } else {
-                return await YTDlpWrap.processMessageToFile(message, filePath);
+                return await YTDlpWrap.processMessageToFile(
+                    message,
+                    filePath,
+                    onProgress
+                );
             }
         }
     }
@@ -227,7 +257,12 @@ export default class YTDlpWrap {
     static async downloadFromGithub(
         filePath?: string,
         version?: string,
-        platform = os.platform()
+        platform = os.platform(),
+        onProgress?: (
+            progress: number,
+            downloaded: number,
+            total: number
+        ) => void
     ): Promise<void> {
         const isWin32 = platform === 'win32';
         const isMac = platform === 'darwin';
@@ -238,10 +273,9 @@ export default class YTDlpWrap {
         if (isWin32) {
             if (os.arch() === 'ia32') {
                 fileName += '_x86.exe';
-            } else if (os.arch() === "arm64") {
-                fileName += "_arm64.exe"
-            }
-             else {
+            } else if (os.arch() === 'arm64') {
+                fileName += '_arm64.exe';
+            } else {
                 fileName += '.exe';
             }
         } else if (isLinux) {
@@ -253,19 +287,28 @@ export default class YTDlpWrap {
                 fileName += '_linux';
             }
         } else if (isMac) {
-            fileName += "_macos"
+            fileName += '_macos';
         }
 
-        if (!version)
-            version = (await YTDlpWrap.getGithubReleases(1, 1))[0].tag_name;
+        // Get latest version if not provided
+        if (!version) {
+            const releases = await YTDlpWrap.getGithubReleases(1, 1);
+            version = releases[0].tag_name;
+        }
+
         if (!filePath) filePath = './' + fileName;
-        let fileURL =
+
+        const fileURL =
             'https://github.com/yt-dlp/yt-dlp/releases/download/' +
             version +
             '/' +
             fileName;
-        await YTDlpWrap.downloadFile(fileURL, filePath);
-        !isWin32 && fs.chmodSync(filePath, '777');
+
+        await YTDlpWrap.downloadFile(fileURL, filePath, onProgress);
+
+        if (!isWin32) {
+            fs.chmodSync(filePath, '777');
+        }
     }
 
     exec(
